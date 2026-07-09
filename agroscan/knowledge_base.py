@@ -28,6 +28,7 @@ INDEX_PATH = "agroscan/knowledge_base/farm_manager_index.faiss"
 METADATA_PATH = "agroscan/knowledge_base/farm_manager_metadata.pkl"
 EMBEDDING_MODEL_NAME = "BAAI/bge-base-en-v1.5"
 TOP_K = 3
+MIN_RELEVANCE_SCORE = 0.45  # cosine similarity threshold — tune based on real query testing
 
 # Lazy-loaded singletons — populated on first use, not at import time.
 _index = None
@@ -91,6 +92,8 @@ def search_farm_knowledge_base(query: str):
     for score, idx in zip(scores[0], indices[0]):
         if idx < 0 or idx >= len(_metadata):
             continue
+        if score < MIN_RELEVANCE_SCORE:
+            continue  # too weak a match — exclude rather than let the model blend it in
         category = _metadata[idx]
         results.append({
             "category": category["title"],
@@ -101,10 +104,21 @@ def search_farm_knowledge_base(query: str):
     if not results:
         return {
             "found": False,
-            "message": "No relevant information found in the farm operations knowledge base.",
+            "instruction_to_agent": (
+                "No sufficiently relevant information exists in the knowledge base "
+                "for this query. You must tell the farmer you don't have specific "
+                "guidance on this topic. Do NOT answer this question using your own "
+                "general knowledge, even partially, and do NOT mention search "
+                "results, tools, or retrieval — just state plainly that you don't "
+                "have information on this topic in your knowledge base."
+            ),
         }
 
     return {
         "found": True,
         "results": results,
+        "instruction_to_agent": (
+            "Answer using ONLY the content in these results. Do not add details, "
+            "figures, or advice beyond what is stated here."
+        ),
     }
